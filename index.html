@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Cosmic Heart for Natella</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💜</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Cormorant+Garamond:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; background:#000; overflow:hidden; touch-action:none; }
+  #app { position:fixed; inset:0; }
+  #app canvas { display:block; width:100%; height:100%; }
+
+  #loading {
+    position:fixed; inset:0; z-index:1000;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse at center, #140019 0%, #05000a 55%, #000000 100%);
+    transition: opacity 1.2s ease, visibility 1.2s ease;
+  }
+  #loading.hidden { opacity:0; visibility:hidden; pointer-events:none; }
+  .load-heart {
+    font-size: 46px;
+    filter: drop-shadow(0 0 18px #ff2d95) drop-shadow(0 0 36px #a020f0);
+    animation: loadPulse 1.4s ease-in-out infinite;
+    margin-bottom: 18px;
+  }
+  .load-text {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px;
+    letter-spacing: 3px;
+    color: #ffd9f0;
+    text-shadow: 0 0 12px #ff2d95, 0 0 24px #a020f0;
+    animation: loadFade 1.8s ease-in-out infinite;
+  }
+  .load-bar-track {
+    margin-top: 22px;
+    width: 220px; height: 2px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .load-bar-fill {
+    height: 100%; width: 30%;
+    background: linear-gradient(90deg, #ff2d95, #a020f0, #ffd700);
+    box-shadow: 0 0 10px #ff2d95;
+    animation: loadBar 1.6s ease-in-out infinite;
+  }
+  @keyframes loadPulse {
+    0%,100% { transform: scale(1); opacity:0.85; }
+    50% { transform: scale(1.18); opacity:1; }
+  }
+  @keyframes loadFade {
+    0%,100% { opacity:0.55; }
+    50% { opacity:1; }
+  }
+  @keyframes loadBar {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(420%); }
+  }
+
+  #ui {
+    position:fixed; inset:0; z-index:10;
+    pointer-events:none;
+    display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+    padding: 28px 10px;
+    opacity:0;
+    transition: opacity 2s ease;
+  }
+  #ui.show { opacity:1; }
+  .title-caption {
+    font-family:'Cormorant Garamond', serif;
+    font-weight:600;
+    font-size: 15px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    color: #f4d7ff;
+    text-shadow: 0 0 10px rgba(255,45,149,0.8), 0 0 22px rgba(160,32,240,0.6);
+    text-align:center;
+  }
+  .hint {
+    font-family:'Cormorant Garamond', serif;
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: rgba(255,220,240,0.6);
+    text-shadow: 0 0 8px rgba(255,45,149,0.5);
+    text-align:center;
+    animation: hintFade 6s ease forwards;
+  }
+  @keyframes hintFade {
+    0% { opacity:1; }
+    75% { opacity:1; }
+    100% { opacity:0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="load-heart">💗</div>
+  <div class="load-text">✨ Загрузка космоса...</div>
+  <div class="load-bar-track"><div class="load-bar-fill"></div></div>
+</div>
+
+<div id="ui">
+  <div class="title-caption">Cosmic Heart for Natella</div>
+  <div class="hint">✦ проведите пальцем, чтобы вращать вселенную ✦</div>
+</div>
+
+<div id="app"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || window.innerWidth < 760;
+
+const COUNTS = isMobile
+  ? { stars: 3200, heart: 3600, dust: 450, comets: 3 }
+  : { stars: 9000, heart: 9500, dust: 1000, comets: 6 };
+
+let scene, camera, renderer, composer, controls, clock;
+let heartGroup, heartPoints, heartBaseSizes;
+let starField, dustField, dustVelocities;
+let nebulaSprites = [];
+let comets = [];
+let nameGroup;
+
+let introActive = true;
+const introDuration = 7.2;
+const introStart = new THREE.Vector3(10, 26, 260);
+const introEnd = new THREE.Vector3(0, 2.2, 15.5);
+const introTargetEnd = new THREE.Vector3(0, 1.4, 0);
+
+const container = document.getElementById('app');
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function makeSoftCircleTexture(size = 128, inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,0)') {
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  grad.addColorStop(0, inner);
+  grad.addColorStop(0.4, inner);
+  grad.addColorStop(1, outer);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+
+function makeNebulaTexture(hex) {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const c = new THREE.Color(hex);
+  const rgb = `${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)}`;
+  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  grad.addColorStop(0, `rgba(${rgb},0.55)`);
+  grad.addColorStop(0.35, `rgba(${rgb},0.28)`);
+  grad.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+
+function makeCometTexture() {
+  const w = 256, h = 24;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0, 'rgba(255,255,255,0)');
+  grad.addColorStop(0.55, 'rgba(255,190,235,0.45)');
+  grad.addColorStop(0.85, 'rgba(255,240,255,0.85)');
+  grad.addColorStop(1, 'rgba(255,255,255,1)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  return new THREE.CanvasTexture(canvas);
+}
+
+function setupScene() {
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x05000d, 0.0016);
+
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera.position.copy(introStart);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  container.appendChild(renderer.domElement);
+
+  clock = new THREE.Clock();
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.06;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.55;
+  controls.minDistance = 6;
+  controls.maxDistance = 70;
+  controls.target.set(0, 1.4, 0);
+  controls.enabled = false;
+
+  const composerRenderPass = new RenderPass(scene, camera);
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    1.35, 0.55, 0.12
+  );
+  const outputPass = new OutputPass();
+
+  composer = new EffectComposer(renderer);
+  composer.addPass(composerRenderPass);
+  composer.addPass(bloomPass);
+  composer.addPass(outputPass);
+}
+
+function createStars() {
+  const count = COUNTS.stars;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const palette = [new THREE.Color(0xffffff), new THREE.Color(0xffe3f5), new THREE.Color(0xd9c6ff), new THREE.Color(0xc9e6ff)];
+
+  for (let i = 0; i < count; i++) {
+    const r = 90 + Math.random() * 700;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos((Math.random() * 2) - 1);
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.sin(phi) * Math.sin(theta);
+    const z = r * Math.cos(phi);
+    positions[i*3] = x; positions[i*3+1] = y; positions[i*3+2] = z;
+    const col = palette[Math.floor(Math.random() * palette.length)];
+    colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({
+    size: 1.6,
+    map: makeSoftCircleTexture(64),
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true
+  });
+
+  starField = new THREE.Points(geo, mat);
+  scene.add(starField);
+}
+
+function createDust() {
+  const count = COUNTS.dust;
+  const positions = new Float32Array(count * 3);
+  dustVelocities = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    const r = 4 + Math.random() * 55;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos((Math.random() * 2) - 1);
+    positions[i*3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta) * 0.6;
+    positions[i*3+2] = r * Math.cos(phi);
+
+    dustVelocities[i*3] = (Math.random() - 0.5) * 0.03;
+    dustVelocities[i*3+1] = (Math.random() - 0.5) * 0.03 + 0.01;
+    dustVelocities[i*3+2] = (Math.random() - 0.5) * 0.03;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const mat = new THREE.PointsMaterial({
+    size: 0.35,
+    map: makeSoftCircleTexture(64, 'rgba(255,210,240,1)', 'rgba(255,210,240,0)'),
+    color: 0xffb3e6,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  dustField = new THREE.Points(geo, mat);
+  scene.add(dustField);
+}
+
+function createNebula() {
+  const configs = [
+    { color: 0xff2d95, scale: 90, pos: [-30, 12, -70] },
+    { color: 0x8a2be2, scale: 110, pos: [35, -8, -90] },
+    { color: 0xff77c8, scale: 70, pos: [10, 30, -60] },
+    { color: 0x5b1fa8, scale: 100, pos: [-20, -25, -85] }
+  ];
+  configs.forEach(cfg => {
+    const tex = makeNebulaTexture(cfg.color);
+    const mat = new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: 0.75
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(cfg.scale, cfg.scale, 1);
+    sprite.position.set(...cfg.pos);
+    scene.add(sprite);
+    nebulaSprites.push(sprite);
+  });
+}
+
+function createHeart() {
+  const count = COUNTS.heart;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  heartBaseSizes = new Float32Array(count);
+
+  const cInner = new THREE.Color(0xffffff);
+  const cMid = new THREE.Color(0xff2d95);
+  const cOuter = new THREE.Color(0x9d2bd6);
+
+  const scale = 0.52;
+  const yOffset = 4.4;
+
+  for (let i = 0; i < count; i++) {
+    const t = Math.random() * Math.PI * 2;
+    const rFill = Math.sqrt(Math.random());
+
+    let x = 16 * Math.pow(Math.sin(t), 3);
+    let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+
+    x *= rFill;
+    y *= rFill;
+
+    const phi = Math.random() * Math.PI * 2;
+    const depth = (1 - rFill * 0.55) * 3.2 * Math.random();
+    const z = Math.sin(phi) * depth;
+    x += Math.cos(phi) * depth * 0.35;
+
+    positions[i*3] = x * scale;
+    positions[i*3+1] = (y + yOffset) * scale;
+    positions[i*3+2] = z * scale;
+
+    const col = new THREE.Color();
+    if (rFill < 0.55) col.copy(cInner).lerp(cMid, rFill / 0.55);
+    else col.copy(cMid).lerp(cOuter, (rFill - 0.55) / 0.45);
+    colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
+
+    heartBaseSizes[i] = 0.5 + Math.random() * 0.9;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({
+    size: 0.42,
+    map: makeSoftCircleTexture(64),
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true
+  });
+
+  heartPoints = new THREE.Points(geo, mat);
+  heartGroup = new THREE.Group();
+  heartGroup.add(heartPoints);
+  heartGroup.position.set(0, 0.4, 0);
+  scene.add(heartGroup);
+}
+
+function createComets() {
+  const cometTex = makeCometTexture();
+  const headTex = makeSoftCircleTexture(64);
+
+  for (let i = 0; i < COUNTS.comets; i++) {
+    const group = new THREE.Group();
+
+    const headMat = new THREE.SpriteMaterial({
+      map: headTex, color: 0xffffff, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 1
+    });
+    const head = new THREE.Sprite(headMat);
+    head.scale.set(1.4, 1.4, 1);
+    group.add(head);
+
+    const trailGeo = new THREE.PlaneGeometry(18, 1.1);
+    trailGeo.translate(-9, 0, 0);
+    const trailMat = new THREE.MeshBasicMaterial({
+      map: cometTex, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, opacity: 0.85
+    });
+    const trail = new THREE.Mesh(trailGeo, trailMat);
+    group.add(trail);
+
+    resetComet(group, true);
+    scene.add(group);
+    comets.push(group);
+  }
+}
+
+function resetComet(group, randomStart = false) {
+  const dist = 250 + Math.random() * 150;
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos((Math.random() * 1.4) - 0.7);
+
+  const startPos = new THREE.Vector3(
+    dist * Math.sin(phi) * Math.cos(theta),
+    dist * Math.sin(phi) * Math.sin(theta) * 0.6 + 40,
+    dist * Math.cos(phi) - 100
+  );
+
+  const targetPos = new THREE.Vector3(
+    (Math.random() - 0.5) * 60,
+    (Math.random() - 0.5) * 40,
+    (Math.random() - 0.5) * 60
+  );
+
+  const velocity = targetPos.clone().sub(startPos).normalize().multiplyScalar(70 + Math.random() * 60);
+
+  if (randomStart) {
+    const tt = Math.random();
+    startPos.lerp(startPos.clone().add(velocity.clone().multiplyScalar(2)), tt);
+  }
+
+  group.position.copy(startPos);
+  group.userData.velocity = velocity;
+
+  const dir = velocity.clone().normalize();
+  group.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
+}
+
+function updateComets(dt) {
+  comets.forEach(group => {
+    group.position.addScaledVector(group.userData.velocity, dt);
+    if (group.position.length() > 420) {
+      resetComet(group);
+    }
+  });
+}
+
+function updateDust(dt) {
+  const posAttr = dustField.geometry.attributes.position;
+  const arr = posAttr.array;
+  for (let i = 0; i < arr.length; i += 3) {
+    arr[i]   += dustVelocities[i] * dt * 6;
+    arr[i+1] += dustVelocities[i+1] * dt * 6;
+    arr[i+2] += dustVelocities[i+2] * dt * 6;
+
+    const d = Math.sqrt(arr[i]*arr[i] + arr[i+1]*arr[i+1] + arr[i+2]*arr[i+2]);
+    if (d > 60) {
+      arr[i] *= 0.15; arr[i+1] *= 0.15; arr[i+2] *= 0.15;
+    }
+  }
+  posAttr.needsUpdate = true;
+}
+
+async function createNameText() {
+  try {
+    await document.fonts.load("160px 'Marck Script'");
+    await document.fonts.ready;
+  } catch (e) { /* fallback silently */ }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1400;
+  canvas.height = 500;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = "230px 'Marck Script', cursive";
+
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2 + 20;
+
+  // outer glow layers
+  ctx.shadowColor = '#a020f0';
+  ctx.shadowBlur = 55;
+  ctx.fillStyle = 'rgba(160,32,240,0.55)';
+  ctx.fillText('Нателла', cx, cy);
+
+  ctx.shadowColor = '#ff2d95';
+  ctx.shadowBlur = 35;
+  ctx.fillStyle = 'rgba(255,45,149,0.75)';
+  ctx.fillText('Нателла', cx, cy);
+
+  // core gradient fill
+  const grad = ctx.createLinearGradient(cx - 500, 0, cx + 500, 0);
+  grad.addColorStop(0, '#ffd9f2');
+  grad.addColorStop(0.5, '#ffb7e8');
+  grad.addColorStop(1, '#ffe9c2');
+  ctx.shadowColor = '#ff77d6';
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = grad;
+  ctx.fillText('Нателла', cx, cy);
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText('Нателла', cx, cy);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  const group = new THREE.Group();
+  const planeGeo = new THREE.PlaneGeometry(26, 26 * (canvas.height / canvas.width));
+  const layers = 5;
+
+  for (let i = 0; i < layers; i++) {
+    const isFront = i === layers - 1;
+    const mat = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: isFront ? 1 : 0.12,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(planeGeo, mat);
+    mesh.position.z = -i * 0.22;
+    group.add(mesh);
+  }
+
+  group.position.set(0, 9.2, -1.5);
+  return group;
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function updateIntro(elapsed) {
+  const t = Math.min(elapsed / introDuration, 1);
+  const e = easeInOutCubic(t);
+  camera.position.lerpVectors(introStart, introEnd, e);
+  const lookTarget = new THREE.Vector3().lerpVectors(new THREE.Vector3(0, 3, -20), introTargetEnd, e);
+  camera.lookAt(lookTarget);
+
+  if (t >= 1) {
+    introActive = false;
+    controls.target.copy(introTargetEnd);
+    controls.enabled = true;
+    controls.update();
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const elapsed = clock.getElapsedTime();
+
+  const pulse = 1 + Math.sin(elapsed * 2.1) * 0.055 + Math.sin(elapsed * 5.3) * 0.02;
+  heartGroup.scale.setScalar(pulse);
+  heartGroup.rotation.y += 0.0016;
+  heartPoints.material.size = 0.42 * (1 + Math.sin(elapsed * 2.1) * 0.18);
+
+  if (nameGroup) {
+    nameGroup.position.y = 9.2 + Math.sin(elapsed * 1.1) * 0.15;
+  }
+
+  nebulaSprites.forEach((s, i) => {
+    s.material.rotation += (i % 2 === 0 ? 1 : -1) * 0.00035;
+  });
+
+  updateDust(dt);
+  updateComets(dt);
+
+  if (introActive) {
+    updateIntro(elapsed);
+  } else {
+    controls.update();
+  }
+
+  composer.render();
+}
+
+async function init() {
+  setupScene();
+  createStars();
+  createDust();
+  createNebula();
+  createHeart();
+  createComets();
+  nameGroup = await createNameText();
+  scene.add(nameGroup);
+
+  window.addEventListener('resize', onWindowResize);
+
+  animate();
+}
+
+const minLoadTime = new Promise(res => setTimeout(res, 1700));
+Promise.all([init(), minLoadTime]).then(() => {
+  const loading = document.getElementById('loading');
+  const ui = document.getElementById('ui');
+  loading.classList.add('hidden');
+  ui.classList.add('show');
+  setTimeout(() => loading.remove(), 1300);
+});
+</script>
+</body>
+</html>
