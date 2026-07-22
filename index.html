@@ -3,635 +3,433 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Cosmic Heart for Natella</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💜</text></svg>">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Marck+Script&family=Cormorant+Garamond:wght@400;600&display=swap" rel="stylesheet">
+<title>Нателла</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { width:100%; height:100%; background:#000; overflow:hidden; touch-action:none; }
-  #app { position:fixed; inset:0; }
-  #app canvas { display:block; width:100%; height:100%; }
+  html, body {
+    width:100%; height:100%; background:#020006; overflow:hidden;
+    touch-action:none; -webkit-tap-highlight-color:transparent;
+  }
+  #stage { position:fixed; inset:0; }
+  canvas { display:block; width:100%; height:100%; }
 
-  #loading {
-    position:fixed; inset:0; z-index:1000;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    background: radial-gradient(ellipse at center, #140019 0%, #05000a 55%, #000000 100%);
-    transition: opacity 1.2s ease, visibility 1.2s ease;
-  }
-  #loading.hidden { opacity:0; visibility:hidden; pointer-events:none; }
-  .load-heart {
-    font-size: 46px;
-    filter: drop-shadow(0 0 18px #ff2d95) drop-shadow(0 0 36px #a020f0);
-    animation: loadPulse 1.4s ease-in-out infinite;
-    margin-bottom: 18px;
-  }
-  .load-text {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: 22px;
-    letter-spacing: 3px;
-    color: #ffd9f0;
-    text-shadow: 0 0 12px #ff2d95, 0 0 24px #a020f0;
-    animation: loadFade 1.8s ease-in-out infinite;
-  }
-  .load-bar-track {
-    margin-top: 22px;
-    width: 220px; height: 2px;
-    background: rgba(255,255,255,0.08);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  .load-bar-fill {
-    height: 100%; width: 30%;
-    background: linear-gradient(90deg, #ff2d95, #a020f0, #ffd700);
-    box-shadow: 0 0 10px #ff2d95;
-    animation: loadBar 1.6s ease-in-out infinite;
-  }
-  @keyframes loadPulse {
-    0%,100% { transform: scale(1); opacity:0.85; }
-    50% { transform: scale(1.18); opacity:1; }
-  }
-  @keyframes loadFade {
-    0%,100% { opacity:0.55; }
-    50% { opacity:1; }
-  }
-  @keyframes loadBar {
-    0% { transform: translateX(-120%); }
-    100% { transform: translateX(420%); }
+  .vignette {
+    position:fixed; inset:0; pointer-events:none; z-index:5;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 100%);
   }
 
-  #ui {
-    position:fixed; inset:0; z-index:10;
+  .bar {
+    position:fixed; left:0; right:0; height:6vh; background:#000;
+    z-index:6; opacity:0; transform:scaleY(0);
+    transition: opacity 2.2s ease 0.6s, transform 2.2s ease 0.6s;
     pointer-events:none;
-    display:flex; flex-direction:column; align-items:center; justify-content:space-between;
-    padding: 28px 10px;
-    opacity:0;
-    transition: opacity 2s ease;
   }
-  #ui.show { opacity:1; }
-  .title-caption {
-    font-family:'Cormorant Garamond', serif;
-    font-weight:600;
-    font-size: 15px;
-    letter-spacing: 5px;
-    text-transform: uppercase;
-    color: #f4d7ff;
-    text-shadow: 0 0 10px rgba(255,45,149,0.8), 0 0 22px rgba(160,32,240,0.6);
-    text-align:center;
-  }
-  .hint {
-    font-family:'Cormorant Garamond', serif;
-    font-size: 13px;
-    letter-spacing: 2px;
-    color: rgba(255,220,240,0.6);
-    text-shadow: 0 0 8px rgba(255,45,149,0.5);
-    text-align:center;
-    animation: hintFade 6s ease forwards;
-  }
-  @keyframes hintFade {
-    0% { opacity:1; }
-    75% { opacity:1; }
-    100% { opacity:0; }
-  }
+  .bar.top { top:0; transform-origin:top; }
+  .bar.bottom { bottom:0; transform-origin:bottom; }
+  .bar.show { opacity:1; transform:scaleY(1); }
 </style>
 </head>
 <body>
 
-<div id="loading">
-  <div class="load-heart">💗</div>
-  <div class="load-text">✨ Загрузка космоса...</div>
-  <div class="load-bar-track"><div class="load-bar-fill"></div></div>
-</div>
+<div id="stage"><canvas id="c"></canvas></div>
+<div class="vignette"></div>
+<div class="bar top" id="barTop"></div>
+<div class="bar bottom" id="barBottom"></div>
 
-<div id="ui">
-  <div class="title-caption">Cosmic Heart for Natella</div>
-  <div class="hint">✦ проведите пальцем, чтобы вращать вселенную ✦</div>
-</div>
+<script>
+(function(){
+"use strict";
 
-<div id="app"></div>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha:false });
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-  }
+const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || Math.min(window.innerWidth, window.innerHeight) < 760;
+let W = window.innerWidth, H = window.innerHeight;
+let DPR = Math.min(window.devicePixelRatio || 1, isMobile ? 1.6 : 2);
+
+function resizeCanvas(){
+  W = window.innerWidth; H = window.innerHeight;
+  DPR = Math.min(window.devicePixelRatio || 1, isMobile ? 1.6 : 2);
+  canvas.width = Math.floor(W*DPR);
+  canvas.height = Math.floor(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
 }
-</script>
+resizeCanvas();
 
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-
-const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || window.innerWidth < 760;
-
-const COUNTS = isMobile
-  ? { stars: 3200, heart: 3600, dust: 450, comets: 3 }
-  : { stars: 9000, heart: 9500, dust: 1000, comets: 6 };
-
-let scene, camera, renderer, composer, controls, clock;
-let heartGroup, heartPoints, heartBaseSizes;
-let starField, dustField, dustVelocities;
-let nebulaSprites = [];
-let comets = [];
-let nameGroup;
-
-let introActive = true;
-const introDuration = 7.2;
-const introStart = new THREE.Vector3(10, 26, 260);
-const introEnd = new THREE.Vector3(0, 2.2, 15.5);
-const introTargetEnd = new THREE.Vector3(0, 1.4, 0);
-
-const container = document.getElementById('app');
-
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
-function makeSoftCircleTexture(size = 128, inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,0)') {
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-  grad.addColorStop(0, inner);
-  grad.addColorStop(0.4, inner);
-  grad.addColorStop(1, outer);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(canvas);
-}
-
-function makeNebulaTexture(hex) {
-  const size = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  const c = new THREE.Color(hex);
-  const rgb = `${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)}`;
-  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-  grad.addColorStop(0, `rgba(${rgb},0.55)`);
-  grad.addColorStop(0.35, `rgba(${rgb},0.28)`);
+/* ---------- glow sprites ---------- */
+function makeSprite(rgb, size){
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+  grad.addColorStop(0, `rgba(${rgb},1)`);
+  grad.addColorStop(0.35, `rgba(${rgb},0.85)`);
   grad.addColorStop(1, `rgba(${rgb},0)`);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(canvas);
+  g.fillStyle = grad;
+  g.beginPath(); g.arc(size/2,size/2,size/2,0,Math.PI*2); g.fill();
+  return c;
 }
+const SPR_SIZE = 48;
+const spritePink  = makeSprite('255,80,165', SPR_SIZE);
+const spriteGold  = makeSprite('255,205,110', SPR_SIZE);
+const spriteWhite = makeSprite('255,255,255', SPR_SIZE);
 
-function makeCometTexture() {
-  const w = 256, h = 24;
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, w, 0);
-  grad.addColorStop(0, 'rgba(255,255,255,0)');
-  grad.addColorStop(0.55, 'rgba(255,190,235,0.45)');
-  grad.addColorStop(0.85, 'rgba(255,240,255,0.85)');
-  grad.addColorStop(1, 'rgba(255,255,255,1)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
-  return new THREE.CanvasTexture(canvas);
-}
-
-function setupScene() {
-  scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x05000d, 0.0016);
-
-  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
-  camera.position.copy(introStart);
-
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  container.appendChild(renderer.domElement);
-
-  clock = new THREE.Clock();
-
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.06;
-  controls.autoRotate = true;
-  controls.autoRotateSpeed = 0.55;
-  controls.minDistance = 6;
-  controls.maxDistance = 70;
-  controls.target.set(0, 1.4, 0);
-  controls.enabled = false;
-
-  const composerRenderPass = new RenderPass(scene, camera);
-  const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.35, 0.55, 0.12
-  );
-  const outputPass = new OutputPass();
-
-  composer = new EffectComposer(renderer);
-  composer.addPass(composerRenderPass);
-  composer.addPass(bloomPass);
-  composer.addPass(outputPass);
-}
-
-function createStars() {
-  const count = COUNTS.stars;
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const palette = [new THREE.Color(0xffffff), new THREE.Color(0xffe3f5), new THREE.Color(0xd9c6ff), new THREE.Color(0xc9e6ff)];
-
-  for (let i = 0; i < count; i++) {
-    const r = 90 + Math.random() * 700;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos((Math.random() * 2) - 1);
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.sin(phi) * Math.sin(theta);
-    const z = r * Math.cos(phi);
-    positions[i*3] = x; positions[i*3+1] = y; positions[i*3+2] = z;
-    const col = palette[Math.floor(Math.random() * palette.length)];
-    colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  const mat = new THREE.PointsMaterial({
-    size: 1.6,
-    map: makeSoftCircleTexture(64),
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.9,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    sizeAttenuation: true
-  });
-
-  starField = new THREE.Points(geo, mat);
-  scene.add(starField);
-}
-
-function createDust() {
-  const count = COUNTS.dust;
-  const positions = new Float32Array(count * 3);
-  dustVelocities = new Float32Array(count * 3);
-
-  for (let i = 0; i < count; i++) {
-    const r = 4 + Math.random() * 55;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos((Math.random() * 2) - 1);
-    positions[i*3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta) * 0.6;
-    positions[i*3+2] = r * Math.cos(phi);
-
-    dustVelocities[i*3] = (Math.random() - 0.5) * 0.03;
-    dustVelocities[i*3+1] = (Math.random() - 0.5) * 0.03 + 0.01;
-    dustVelocities[i*3+2] = (Math.random() - 0.5) * 0.03;
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-  const mat = new THREE.PointsMaterial({
-    size: 0.35,
-    map: makeSoftCircleTexture(64, 'rgba(255,210,240,1)', 'rgba(255,210,240,0)'),
-    color: 0xffb3e6,
-    transparent: true,
-    opacity: 0.55,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-
-  dustField = new THREE.Points(geo, mat);
-  scene.add(dustField);
-}
-
-function createNebula() {
-  const configs = [
-    { color: 0xff2d95, scale: 90, pos: [-30, 12, -70] },
-    { color: 0x8a2be2, scale: 110, pos: [35, -8, -90] },
-    { color: 0xff77c8, scale: 70, pos: [10, 30, -60] },
-    { color: 0x5b1fa8, scale: 100, pos: [-20, -25, -85] }
-  ];
-  configs.forEach(cfg => {
-    const tex = makeNebulaTexture(cfg.color);
-    const mat = new THREE.SpriteMaterial({
-      map: tex, transparent: true, depthWrite: false,
-      blending: THREE.AdditiveBlending, opacity: 0.75
+/* ---------- stars ---------- */
+let stars = [];
+function buildStars(){
+  const count = isMobile ? 220 : 380;
+  stars = [];
+  for(let i=0;i<count;i++){
+    stars.push({
+      x: Math.random()*W,
+      y: Math.random()*H,
+      r: Math.random()*1.4 + 0.3,
+      base: Math.random()*0.5 + 0.35,
+      speed: Math.random()*0.002 + 0.0008,
+      phase: Math.random()*Math.PI*2
     });
-    const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(cfg.scale, cfg.scale, 1);
-    sprite.position.set(...cfg.pos);
-    scene.add(sprite);
-    nebulaSprites.push(sprite);
+  }
+}
+buildStars();
+
+/* ---------- falling stars (meteors) ---------- */
+let meteors = [];
+function spawnMeteor(){
+  meteors.push({
+    x: Math.random()*W,
+    y: -20,
+    vx: (Math.random()*0.6+0.5) * (Math.random()<0.5?-1:1) * 60,
+    vy: (Math.random()*0.6+0.9) * 140,
+    life: 1,
+    len: Math.random()*60+40
   });
 }
 
-function createHeart() {
-  const count = COUNTS.heart;
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  heartBaseSizes = new Float32Array(count);
-
-  const cInner = new THREE.Color(0xffffff);
-  const cMid = new THREE.Color(0xff2d95);
-  const cOuter = new THREE.Color(0x9d2bd6);
-
-  const scale = 0.52;
-  const yOffset = 4.4;
-
-  for (let i = 0; i < count; i++) {
-    const t = Math.random() * Math.PI * 2;
-    const rFill = Math.sqrt(Math.random());
-
-    let x = 16 * Math.pow(Math.sin(t), 3);
-    let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
-
-    x *= rFill;
-    y *= rFill;
-
-    const phi = Math.random() * Math.PI * 2;
-    const depth = (1 - rFill * 0.55) * 3.2 * Math.random();
-    const z = Math.sin(phi) * depth;
-    x += Math.cos(phi) * depth * 0.35;
-
-    positions[i*3] = x * scale;
-    positions[i*3+1] = (y + yOffset) * scale;
-    positions[i*3+2] = z * scale;
-
-    const col = new THREE.Color();
-    if (rFill < 0.55) col.copy(cInner).lerp(cMid, rFill / 0.55);
-    else col.copy(cMid).lerp(cOuter, (rFill - 0.55) / 0.45);
-    colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
-
-    heartBaseSizes[i] = 0.5 + Math.random() * 0.9;
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  const mat = new THREE.PointsMaterial({
-    size: 0.42,
-    map: makeSoftCircleTexture(64),
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.95,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    sizeAttenuation: true
-  });
-
-  heartPoints = new THREE.Points(geo, mat);
-  heartGroup = new THREE.Group();
-  heartGroup.add(heartPoints);
-  heartGroup.position.set(0, 0.4, 0);
-  scene.add(heartGroup);
+/* ---------- flashes ---------- */
+let flashes = [];
+function spawnFlash(x,y){
+  flashes.push({ x, y, r:0, maxR: Math.max(W,H)*0.55, alpha:0.55 });
 }
 
-function createComets() {
-  const cometTex = makeCometTexture();
-  const headTex = makeSoftCircleTexture(64);
+/* ---------- text sampling ---------- */
+function sampleText(text, fontPx, maxPoints){
+  const pad = fontPx*0.6;
+  const tmp = document.createElement('canvas');
+  const tctx = tmp.getContext('2d');
+  tctx.font = `bold ${fontPx}px Arial, sans-serif`;
+  let tw = tctx.measureText(text).width;
+  tmp.width = Math.ceil(tw + pad*2);
+  tmp.height = Math.ceil(fontPx*1.6);
+  tctx.font = `bold ${fontPx}px Arial, sans-serif`;
+  tctx.fillStyle = '#fff';
+  tctx.textAlign = 'center';
+  tctx.textBaseline = 'middle';
+  tctx.fillText(text, tmp.width/2, tmp.height/2);
 
-  for (let i = 0; i < COUNTS.comets; i++) {
-    const group = new THREE.Group();
-
-    const headMat = new THREE.SpriteMaterial({
-      map: headTex, color: 0xffffff, transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 1
-    });
-    const head = new THREE.Sprite(headMat);
-    head.scale.set(1.4, 1.4, 1);
-    group.add(head);
-
-    const trailGeo = new THREE.PlaneGeometry(18, 1.1);
-    trailGeo.translate(-9, 0, 0);
-    const trailMat = new THREE.MeshBasicMaterial({
-      map: cometTex, transparent: true, depthWrite: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, opacity: 0.85
-    });
-    const trail = new THREE.Mesh(trailGeo, trailMat);
-    group.add(trail);
-
-    resetComet(group, true);
-    scene.add(group);
-    comets.push(group);
-  }
-}
-
-function resetComet(group, randomStart = false) {
-  const dist = 250 + Math.random() * 150;
-  const theta = Math.random() * Math.PI * 2;
-  const phi = Math.acos((Math.random() * 1.4) - 0.7);
-
-  const startPos = new THREE.Vector3(
-    dist * Math.sin(phi) * Math.cos(theta),
-    dist * Math.sin(phi) * Math.sin(theta) * 0.6 + 40,
-    dist * Math.cos(phi) - 100
-  );
-
-  const targetPos = new THREE.Vector3(
-    (Math.random() - 0.5) * 60,
-    (Math.random() - 0.5) * 40,
-    (Math.random() - 0.5) * 60
-  );
-
-  const velocity = targetPos.clone().sub(startPos).normalize().multiplyScalar(70 + Math.random() * 60);
-
-  if (randomStart) {
-    const tt = Math.random();
-    startPos.lerp(startPos.clone().add(velocity.clone().multiplyScalar(2)), tt);
-  }
-
-  group.position.copy(startPos);
-  group.userData.velocity = velocity;
-
-  const dir = velocity.clone().normalize();
-  group.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
-}
-
-function updateComets(dt) {
-  comets.forEach(group => {
-    group.position.addScaledVector(group.userData.velocity, dt);
-    if (group.position.length() > 420) {
-      resetComet(group);
-    }
-  });
-}
-
-function updateDust(dt) {
-  const posAttr = dustField.geometry.attributes.position;
-  const arr = posAttr.array;
-  for (let i = 0; i < arr.length; i += 3) {
-    arr[i]   += dustVelocities[i] * dt * 6;
-    arr[i+1] += dustVelocities[i+1] * dt * 6;
-    arr[i+2] += dustVelocities[i+2] * dt * 6;
-
-    const d = Math.sqrt(arr[i]*arr[i] + arr[i+1]*arr[i+1] + arr[i+2]*arr[i+2]);
-    if (d > 60) {
-      arr[i] *= 0.15; arr[i+1] *= 0.15; arr[i+2] *= 0.15;
+  const data = tctx.getImageData(0,0,tmp.width,tmp.height).data;
+  const pts = [];
+  const step = isMobile ? 3 : 2;
+  for(let y=0;y<tmp.height;y+=step){
+    for(let x=0;x<tmp.width;x+=step){
+      const a = data[(y*tmp.width+x)*4+3];
+      if(a > 120){
+        pts.push({ x: x - tmp.width/2, y: y - tmp.height/2 });
+      }
     }
   }
-  posAttr.needsUpdate = true;
-}
-
-// Текст "Нателла" теперь строится компактным и размещается ВНУТРИ силуэта сердца
-async function createNameText() {
-  try {
-    await document.fonts.load("160px 'Marck Script'");
-    await document.fonts.ready;
-  } catch (e) { /* fallback silently */ }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 1400;
-  canvas.height = 500;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = "230px 'Marck Script', cursive";
-
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2 + 20;
-
-  ctx.shadowColor = '#a020f0';
-  ctx.shadowBlur = 55;
-  ctx.fillStyle = 'rgba(160,32,240,0.55)';
-  ctx.fillText('Нателла', cx, cy);
-
-  ctx.shadowColor = '#ff2d95';
-  ctx.shadowBlur = 35;
-  ctx.fillStyle = 'rgba(255,45,149,0.75)';
-  ctx.fillText('Нателла', cx, cy);
-
-  const grad = ctx.createLinearGradient(cx - 500, 0, cx + 500, 0);
-  grad.addColorStop(0, '#ffd9f2');
-  grad.addColorStop(0.5, '#ffb7e8');
-  grad.addColorStop(1, '#ffe9c2');
-  ctx.shadowColor = '#ff77d6';
-  ctx.shadowBlur = 18;
-  ctx.fillStyle = grad;
-  ctx.fillText('Нателла', cx, cy);
-
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.fillText('Нателла', cx, cy);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  texture.colorSpace = THREE.SRGBColorSpace;
-
-  const group = new THREE.Group();
-
-  // Компактный размер, чтобы поместиться внутри тела сердца
-  const planeW = 8.2;
-  const planeH = planeW * (canvas.height / canvas.width);
-  const planeGeo = new THREE.PlaneGeometry(planeW, planeH);
-  const layers = 5;
-
-  for (let i = 0; i < layers; i++) {
-    const isFront = i === layers - 1;
-    const mat = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      opacity: isFront ? 1 : 0.14,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      depthTest: false,
-      side: THREE.DoubleSide
-    });
-    const mesh = new THREE.Mesh(planeGeo, mat);
-    mesh.position.z = 1.2 - i * 0.12;
-    group.add(mesh);
+  // shuffle
+  for(let i=pts.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    const tmp2 = pts[i]; pts[i]=pts[j]; pts[j]=tmp2;
   }
-
-  // Позиция внутри силуэта сердца (координаты локальные относительно heartGroup)
-  group.position.set(0, 1.7, 1.4);
-  group.renderOrder = 999;
-  return group;
+  return pts.length > maxPoints ? pts.slice(0,maxPoints) : pts;
 }
 
-function onWindowResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
+function fitFontToWidth(text, startPx, maxWidthRatio){
+  const tmp = document.createElement('canvas').getContext('2d');
+  let px = startPx;
+  tmp.font = `bold ${px}px Arial, sans-serif`;
+  let tw = tmp.measureText(text).width;
+  const maxW = W*maxWidthRatio;
+  if(tw > maxW){ px = px * (maxW/tw); }
+  return Math.max(px, 18);
 }
 
-function updateIntro(elapsed) {
-  const t = Math.min(elapsed / introDuration, 1);
-  const e = easeInOutCubic(t);
-  camera.position.lerpVectors(introStart, introEnd, e);
-  const lookTarget = new THREE.Vector3().lerpVectors(new THREE.Vector3(0, 3, -20), introTargetEnd, e);
-  camera.lookAt(lookTarget);
+let nameBigTargets = [];
+let nameSmallTargets = [];
+let heartTargets = [];
 
-  if (t >= 1) {
-    introActive = false;
-    controls.target.copy(introTargetEnd);
-    controls.enabled = true;
-    controls.update();
+function buildHeartTargets(count){
+  const scale = (Math.min(W,H*0.9) * 0.62) / 32;
+  const arr = [];
+  for(let i=0;i<count;i++){
+    const t = Math.random()*Math.PI*2;
+    const r = Math.sqrt(Math.random());
+    let hx = 16*Math.pow(Math.sin(t),3);
+    let hy = 13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t);
+    hx *= r; hy *= r;
+    const z = (Math.random()-0.5)*46;
+    arr.push({ x: hx*scale, y: -hy*scale, z });
   }
+  return arr;
 }
 
-function animate() {
-  requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  const elapsed = clock.getElapsedTime();
+function rebuildTargets(){
+  const bigFont = fitFontToWidth('Нателла', W*0.30, 0.88);
+  const smallFont = fitFontToWidth('Нателла', W*0.15, 0.55);
+  nameBigTargets = sampleText('Нателла', bigFont, isMobile ? 900 : 1500);
+  nameSmallTargets = sampleText('Нателла', smallFont, isMobile ? 400 : 650);
+  heartTargets = buildHeartTargets(N);
+}
 
-  const pulse = 1 + Math.sin(elapsed * 2.1) * 0.055 + Math.sin(elapsed * 5.3) * 0.02;
-  heartGroup.scale.setScalar(pulse);
-  heartGroup.rotation.y += 0.0016;
-  heartPoints.material.size = 0.42 * (1 + Math.sin(elapsed * 2.1) * 0.18);
+/* ---------- particles ---------- */
+let N = isMobile ? 1500 : 2700;
+let particles = [];
 
-  if (nameGroup) {
-    // текст мягко "дышит" вместе с сердцем, оставаясь внутри него
-    nameGroup.position.y = 1.7 + Math.sin(elapsed * 2.1) * 0.05;
-    nameGroup.children.forEach((m, idx) => {
-      m.material.opacity = (idx === nameGroup.children.length - 1 ? 1 : 0.14) * (0.9 + Math.sin(elapsed * 2.1) * 0.1);
+function initParticles(){
+  particles = [];
+  const heartRatio = 0.68;
+  for(let i=0;i<N;i++){
+    const corner = Math.floor(Math.random()*4);
+    let sx, sy;
+    const over = 60;
+    if(corner===0){ sx = -over - Math.random()*W*0.3; sy = -over - Math.random()*H*0.3; }
+    else if(corner===1){ sx = W+over + Math.random()*W*0.3; sy = -over - Math.random()*H*0.3; }
+    else if(corner===2){ sx = -over - Math.random()*W*0.3; sy = H+over + Math.random()*H*0.3; }
+    else { sx = W+over + Math.random()*W*0.3; sy = H+over + Math.random()*H*0.3; }
+
+    const cType = Math.random();
+    particles.push({
+      slot: i,
+      group: i < N*heartRatio ? 'heart' : 'name',
+      x: sx, y: sy, vx:0, vy:0,
+      jitterX: (Math.random()-0.5)*7,
+      jitterY: (Math.random()-0.5)*7,
+      zSmall: (Math.random()-0.5)*26,
+      baseSize: Math.random()*2.2 + 1.4,
+      colorType: cType < 0.46 ? 'pink' : (cType < 0.9 ? 'gold' : 'white'),
+      bobSeed: Math.random()*Math.PI*2
     });
   }
-
-  nebulaSprites.forEach((s, i) => {
-    s.material.rotation += (i % 2 === 0 ? 1 : -1) * 0.00035;
-  });
-
-  updateDust(dt);
-  updateComets(dt);
-
-  if (introActive) {
-    updateIntro(elapsed);
-  } else {
-    controls.update();
-  }
-
-  composer.render();
 }
 
-async function init() {
-  setupScene();
-  createStars();
-  createDust();
-  createNebula();
-  createHeart();
-  createComets();
-  nameGroup = await createNameText();
-  heartGroup.add(nameGroup); // текст — дочерний элемент сердца: вращается и пульсирует вместе с ним
-  window.addEventListener('resize', onWindowResize);
+rebuildTargets();
+initParticles();
 
-  animate();
-}
-
-const minLoadTime = new Promise(res => setTimeout(res, 1700));
-Promise.all([init(), minLoadTime]).then(() => {
-  const loading = document.getElementById('loading');
-  const ui = document.getElementById('ui');
-  loading.classList.add('hidden');
-  ui.classList.add('show');
-  setTimeout(() => loading.remove(), 1300);
+/* ---------- resize handling (debounced) ---------- */
+let resizeTimer = null;
+window.addEventListener('resize', function(){
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function(){
+    resizeCanvas();
+    buildStars();
+    rebuildTargets();
+  }, 220);
 });
+
+/* ---------- animation state ---------- */
+const START_TIME = performance.now();
+const TRANSITION_START = 8000;
+let cameraTheta = 0;
+let swirlBoost = 0;
+let swirlApplied = false;
+let lastMeteor = 0;
+let lastFlash = 0;
+let prevPhaseFinal = false;
+
+function getNameBigLocal(p){
+  const arr = nameBigTargets.length ? nameBigTargets : [{x:0,y:0}];
+  const nt = arr[p.slot % arr.length];
+  return {
+    lx: nt.x + p.jitterX,
+    ly: nt.y + p.jitterY,
+    lz: p.zSmall,
+    cx: W/2, cy: H*0.42
+  };
+}
+
+function getFinalLocal(p, elapsed){
+  if(p.group === 'heart'){
+    const ht = heartTargets[p.slot % heartTargets.length];
+    const pulse = 1 + Math.sin(elapsed*0.0032 + p.slot*0.001) * 0.06;
+    return {
+      lx: ht.x*pulse, ly: ht.y*pulse, lz: ht.z,
+      cx: W/2, cy: H*0.60
+    };
+  } else {
+    const arr = nameSmallTargets.length ? nameSmallTargets : [{x:0,y:0}];
+    const nt = arr[p.slot % arr.length];
+    const bob = Math.sin(elapsed*0.0016 + p.bobSeed) * 3;
+    return {
+      lx: nt.x + p.jitterX*0.55,
+      ly: nt.y + p.jitterY*0.55 + bob,
+      lz: p.zSmall*0.4,
+      cx: W/2, cy: H*0.27
+    };
+  }
+}
+
+function project(local, theta){
+  const rx = local.lx*Math.cos(theta) - local.lz*Math.sin(theta);
+  const rz = local.lx*Math.sin(theta) + local.lz*Math.cos(theta);
+  const focal = Math.max(W,H) * 0.9;
+  const persp = focal/(focal+rz);
+  return {
+    tx: local.cx + rx*persp,
+    ty: local.cy + local.ly*persp,
+    scale: persp
+  };
+}
+
+let lastTime = performance.now();
+
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt = now - lastTime;
+  lastTime = now;
+  if(dt > 60) dt = 60;
+  const dtF = dt/16.6667;
+  const elapsed = now - START_TIME;
+  const isFinal = elapsed >= TRANSITION_START;
+
+  if(isFinal && !prevPhaseFinal){
+    swirlBoost = 1.5;
+    swirlApplied = false;
+  }
+  prevPhaseFinal = isFinal;
+
+  // camera rotation
+  let theta;
+  if(!isFinal){
+    theta = Math.sin(elapsed*0.0005)*0.30;
+  } else {
+    cameraTheta += 0.00005*dt;
+    swirlBoost *= Math.pow(0.05, dt/1600);
+    theta = cameraTheta + Math.sin(elapsed*0.00035)*0.16 + swirlBoost*1.8;
+  }
+
+  // background fade (trail effect)
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(4,2,10,0.20)';
+  ctx.fillRect(0,0,W,H);
+
+  // stars
+  const starAlphaGlobal = Math.min(1, elapsed/2200);
+  for(let i=0;i<stars.length;i++){
+    const s = stars[i];
+    const tw = Math.sin(elapsed*s.speed + s.phase)*0.5+0.5;
+    const a = (s.base + tw*0.4) * starAlphaGlobal;
+    ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // energy field behind forming name
+  if(!isFinal){
+    const pulse = Math.sin(elapsed*0.004)*0.5+0.5;
+    const gx = W/2, gy = H*0.42;
+    const grad = ctx.createRadialGradient(gx,gy,0,gx,gy, Math.min(W,H)*0.42);
+    grad.addColorStop(0, `rgba(255,120,190,${0.16+pulse*0.10})`);
+    grad.addColorStop(1, 'rgba(255,120,190,0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // particles
+  ctx.globalCompositeOperation = 'lighter';
+  const introFade = Math.min(1, elapsed/900);
+  const k = 0.05;
+  const damping = Math.pow(0.90, dtF);
+
+  for(let i=0;i<particles.length;i++){
+    const p = particles[i];
+    const local = isFinal ? getFinalLocal(p, elapsed) : getNameBigLocal(p);
+    const proj = project(local, theta);
+
+    if(isFinal && !swirlApplied){
+      const ang = Math.atan2(p.y - H/2, p.x - W/2) + Math.PI/2;
+      const force = 70 + Math.random()*90;
+      p.vx += Math.cos(ang)*force*0.35;
+      p.vy += Math.sin(ang)*force*0.35;
+    }
+
+    p.vx += (proj.tx - p.x) * k * dtF;
+    p.vy += (proj.ty - p.y) * k * dtF;
+    p.vx *= damping;
+    p.vy *= damping;
+    p.x += p.vx * dtF;
+    p.y += p.vy * dtF;
+
+    const scale = Math.max(0.25, Math.min(1.6, proj.scale));
+    const size = p.baseSize * scale * SPR_SIZE * 0.09;
+    const alpha = Math.max(0, Math.min(1, scale)) * introFade;
+
+    let sprite = spritePink;
+    if(p.colorType === 'gold') sprite = spriteGold;
+    else if(p.colorType === 'white') sprite = spriteWhite;
+
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(sprite, p.x - size/2, p.y - size/2, size, size);
+  }
+  ctx.globalAlpha = 1;
+
+  // meteors (only in final phase)
+  if(isFinal){
+    if(now - lastMeteor > (isMobile ? 900 : 650)){
+      lastMeteor = now;
+      if(Math.random() < 0.85) spawnMeteor();
+    }
+    for(let i=meteors.length-1;i>=0;i--){
+      const m = meteors[i];
+      m.x += m.vx*dtF*0.15;
+      m.y += m.vy*dtF*0.15;
+      m.life -= 0.012*dtF;
+      if(m.life <= 0 || m.y > H+40){ meteors.splice(i,1); continue; }
+      const tailX = m.x - m.vx*0.12;
+      const tailY = m.y - m.vy*0.12;
+      const grad = ctx.createLinearGradient(m.x, m.y, tailX, tailY);
+      grad.addColorStop(0, `rgba(255,255,255,${0.9*m.life})`);
+      grad.addColorStop(1, 'rgba(255,180,220,0)');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(tailX, tailY);
+      ctx.stroke();
+    }
+
+    // flashes
+    if(now - lastFlash > 5200){
+      lastFlash = now;
+      spawnFlash(W/2 + (Math.random()-0.5)*W*0.2, H*0.60 + (Math.random()-0.5)*H*0.1);
+    }
+    for(let i=flashes.length-1;i>=0;i--){
+      const f = flashes[i];
+      f.r += (f.maxR - f.r) * 0.045 * dtF;
+      f.alpha *= Math.pow(0.90, dtF);
+      if(f.alpha < 0.01){ flashes.splice(i,1); continue; }
+      const grad = ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,f.r);
+      grad.addColorStop(0, `rgba(255,225,240,${f.alpha})`);
+      grad.addColorStop(0.4, `rgba(255,150,210,${f.alpha*0.4})`);
+      grad.addColorStop(1, 'rgba(255,150,210,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,W,H);
+    }
+  }
+
+  if(isFinal && !swirlApplied) swirlApplied = true;
+}
+
+requestAnimationFrame(frame);
+
+setTimeout(function(){
+  document.getElementById('barTop').classList.add('show');
+  document.getElementById('barBottom').classList.add('show');
+}, 400);
+
+})();
 </script>
 </body>
 </html>
