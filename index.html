@@ -15,7 +15,7 @@
 
   .vignette {
     position:fixed; inset:0; pointer-events:none; z-index:5;
-    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.55) 100%);
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(0,0,0,0.6) 100%);
   }
 
   .bar {
@@ -56,7 +56,20 @@ function resizeCanvas(){
 }
 resizeCanvas();
 
-/* ---------- glow sprites ---------- */
+/* ================= bloom offscreen canvas ================= */
+const bloomCanvas = document.createElement('canvas');
+const bloomCtx = bloomCanvas.getContext('2d');
+let bloomSupported = true;
+try { bloomCtx.filter = 'blur(1px)'; bloomCtx.filter = 'none'; } catch(e){ bloomSupported = false; }
+
+function resizeBloom(){
+  const ratio = isMobile ? 0.16 : 0.26;
+  bloomCanvas.width = Math.max(120, Math.floor(W*ratio));
+  bloomCanvas.height = Math.max(120, Math.floor(H*ratio));
+}
+resizeBloom();
+
+/* ================= glow sprites ================= */
 function makeSprite(rgb, size){
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -70,14 +83,15 @@ function makeSprite(rgb, size){
   return c;
 }
 const SPR_SIZE = 48;
-const spritePink  = makeSprite('255,80,165', SPR_SIZE);
+const spritePink  = makeSprite('255,70,160', SPR_SIZE);
 const spriteGold  = makeSprite('255,205,110', SPR_SIZE);
 const spriteWhite = makeSprite('255,255,255', SPR_SIZE);
+const spriteHotWhite = makeSprite('255,240,250', SPR_SIZE);
 
-/* ---------- stars ---------- */
+/* ================= stars ================= */
 let stars = [];
 function buildStars(){
-  const count = isMobile ? 220 : 380;
+  const count = isMobile ? 240 : 420;
   stars = [];
   for(let i=0;i<count;i++){
     stars.push({
@@ -92,27 +106,55 @@ function buildStars(){
 }
 buildStars();
 
-/* ---------- falling stars (meteors) ---------- */
+/* ================= falling meteors ================= */
 let meteors = [];
+const meteorPalette = ['255,255,255', '255,190,225', '255,215,150'];
 function spawnMeteor(){
   meteors.push({
     x: Math.random()*W,
     y: -20,
-    vx: (Math.random()*0.6+0.5) * (Math.random()<0.5?-1:1) * 60,
-    vy: (Math.random()*0.6+0.9) * 140,
+    vx: (Math.random()*0.6+0.5) * (Math.random()<0.5?-1:1) * 70,
+    vy: (Math.random()*0.6+0.9) * 160,
     life: 1,
-    len: Math.random()*60+40
+    color: meteorPalette[Math.floor(Math.random()*meteorPalette.length)]
   });
 }
 
-/* ---------- flashes ---------- */
+/* ================= full-screen flashes ================= */
 let flashes = [];
-function spawnFlash(x,y){
-  flashes.push({ x, y, r:0, maxR: Math.max(W,H)*0.55, alpha:0.55 });
+function spawnFlash(x,y,strength){
+  flashes.push({ x, y, r:0, maxR: Math.max(W,H)*(strength||0.55), alpha:(strength?0.65:0.55) });
 }
 
-/* ---------- text sampling ---------- */
+/* ================= shockwave rings ================= */
+let rings = [];
+function spawnRing(x,y,color,maxR,startAlpha){
+  rings.push({ x, y, r: 4, maxR, alpha:startAlpha, color });
+}
+
+/* ================= orbiting magic sparks ================= */
+let sparks = [];
+function buildSparks(){
+  const count = isMobile ? 60 : 110;
+  sparks = [];
+  for(let i=0;i<count;i++){
+    sparks.push({
+      angle: Math.random()*Math.PI*2,
+      speed: (Math.random()*0.4+0.15) * (Math.random()<0.5?-1:1),
+      radiusX: Math.random()*0.5 + 0.85,
+      radiusY: Math.random()*0.5 + 0.85,
+      bobSeed: Math.random()*Math.PI*2,
+      size: Math.random()*1.8 + 0.8,
+      colorType: Math.random() < 0.55 ? 'gold' : 'white',
+      twinkleSeed: Math.random()*Math.PI*2
+    });
+  }
+}
+buildSparks();
+
+/* ================= text sampling ================= */
 function sampleText(text, fontPx, maxPoints){
+  const step = fontPx < 50 ? 1 : (fontPx < 90 ? 2 : 3);
   const pad = fontPx*0.6;
   const tmp = document.createElement('canvas');
   const tctx = tmp.getContext('2d');
@@ -128,7 +170,6 @@ function sampleText(text, fontPx, maxPoints){
 
   const data = tctx.getImageData(0,0,tmp.width,tmp.height).data;
   const pts = [];
-  const step = isMobile ? 3 : 2;
   for(let y=0;y<tmp.height;y+=step){
     for(let x=0;x<tmp.width;x+=step){
       const a = data[(y*tmp.width+x)*4+3];
@@ -137,10 +178,9 @@ function sampleText(text, fontPx, maxPoints){
       }
     }
   }
-  // shuffle
   for(let i=pts.length-1;i>0;i--){
     const j = Math.floor(Math.random()*(i+1));
-    const tmp2 = pts[i]; pts[i]=pts[j]; pts[j]=tmp2;
+    const t = pts[i]; pts[i]=pts[j]; pts[j]=t;
   }
   return pts.length > maxPoints ? pts.slice(0,maxPoints) : pts;
 }
@@ -155,12 +195,24 @@ function fitFontToWidth(text, startPx, maxWidthRatio){
   return Math.max(px, 18);
 }
 
+function fitFontExact(text, targetWidthPx){
+  const tmp = document.createElement('canvas').getContext('2d');
+  const probe = 100;
+  tmp.font = `bold ${probe}px Arial, sans-serif`;
+  const tw = tmp.measureText(text).width;
+  const px = probe * (targetWidthPx / Math.max(tw, 1));
+  return Math.max(px, 12);
+}
+
 let nameBigTargets = [];
 let nameSmallTargets = [];
 let heartTargets = [];
+let heartScale = 60;
 
 function buildHeartTargets(count){
-  const scale = (Math.min(W,H*0.9) * 0.62) / 32;
+  const desiredWidth = Math.min(W, H*0.9) * 0.62;
+  const scale = desiredWidth / 32;
+  heartScale = scale;
   const arr = [];
   for(let i=0;i<count;i++){
     const t = Math.random()*Math.PI*2;
@@ -175,20 +227,24 @@ function buildHeartTargets(count){
 }
 
 function rebuildTargets(){
-  const bigFont = fitFontToWidth('Нателла', W*0.30, 0.88);
-  const smallFont = fitFontToWidth('Нателла', W*0.15, 0.55);
-  nameBigTargets = sampleText('Нателла', bigFont, isMobile ? 900 : 1500);
-  nameSmallTargets = sampleText('Нателла', smallFont, isMobile ? 400 : 650);
   heartTargets = buildHeartTargets(N);
+
+  const bigFont = fitFontToWidth('Нателла', W*0.30, 0.88);
+  nameBigTargets = sampleText('Нателла', bigFont, isMobile ? 900 : 1500);
+
+  const smallWidthPx = heartScale * 9.5;
+  const smallFont = fitFontExact('Нателла', smallWidthPx);
+  nameSmallTargets = sampleText('Нателла', smallFont, isMobile ? 550 : 950);
 }
 
-/* ---------- particles ---------- */
+/* ================= particles ================= */
 let N = isMobile ? 1500 : 2700;
 let particles = [];
+const ENABLE_TRAILS = !isMobile;
 
 function initParticles(){
   particles = [];
-  const heartRatio = 0.68;
+  const heartRatio = 0.66;
   for(let i=0;i<N;i++){
     const corner = Math.floor(Math.random()*4);
     let sx, sy;
@@ -198,16 +254,25 @@ function initParticles(){
     else if(corner===2){ sx = -over - Math.random()*W*0.3; sy = H+over + Math.random()*H*0.3; }
     else { sx = W+over + Math.random()*W*0.3; sy = H+over + Math.random()*H*0.3; }
 
-    const cType = Math.random();
+    const group = i < N*heartRatio ? 'heart' : 'name';
+    const cr = Math.random();
+    let colorType;
+    if(group === 'name'){
+      colorType = cr < 0.55 ? 'hotwhite' : (cr < 0.85 ? 'gold' : 'white');
+    } else {
+      colorType = cr < 0.5 ? 'pink' : (cr < 0.85 ? 'gold' : 'white');
+    }
+
     particles.push({
       slot: i,
-      group: i < N*heartRatio ? 'heart' : 'name',
+      group,
       x: sx, y: sy, vx:0, vy:0,
+      px: sx, py: sy,
       jitterX: (Math.random()-0.5)*7,
       jitterY: (Math.random()-0.5)*7,
       zSmall: (Math.random()-0.5)*26,
       baseSize: Math.random()*2.2 + 1.4,
-      colorType: cType < 0.46 ? 'pink' : (cType < 0.9 ? 'gold' : 'white'),
+      colorType,
       bobSeed: Math.random()*Math.PI*2
     });
   }
@@ -216,26 +281,30 @@ function initParticles(){
 rebuildTargets();
 initParticles();
 
-/* ---------- resize handling (debounced) ---------- */
+/* ================= resize ================= */
 let resizeTimer = null;
 window.addEventListener('resize', function(){
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(function(){
     resizeCanvas();
+    resizeBloom();
     buildStars();
+    buildSparks();
     rebuildTargets();
   }, 220);
 });
 
-/* ---------- animation state ---------- */
+/* ================= animation state ================= */
 const START_TIME = performance.now();
 const TRANSITION_START = 8000;
 let cameraTheta = 0;
 let swirlBoost = 0;
-let swirlApplied = false;
+let transitionFired = false;
+let prevPulseSin = 0;
 let lastMeteor = 0;
-let lastFlash = 0;
-let prevPhaseFinal = false;
+let lastBigFlash = 0;
+let bloomFrameToggle = 0;
+let zoom = 1;
 
 function getNameBigLocal(p){
   const arr = nameBigTargets.length ? nameBigTargets : [{x:0,y:0}];
@@ -248,37 +317,47 @@ function getNameBigLocal(p){
   };
 }
 
-function getFinalLocal(p, elapsed){
+const HEART_CENTER_Y_RATIO = 0.56;
+
+function getFinalLocal(p, elapsed, heartPulseVal){
+  const cx = W/2, cy = H*HEART_CENTER_Y_RATIO;
   if(p.group === 'heart'){
     const ht = heartTargets[p.slot % heartTargets.length];
-    const pulse = 1 + Math.sin(elapsed*0.0032 + p.slot*0.001) * 0.06;
     return {
-      lx: ht.x*pulse, ly: ht.y*pulse, lz: ht.z,
-      cx: W/2, cy: H*0.60
+      lx: ht.x*heartPulseVal, ly: ht.y*heartPulseVal, lz: ht.z,
+      cx, cy
     };
   } else {
     const arr = nameSmallTargets.length ? nameSmallTargets : [{x:0,y:0}];
     const nt = arr[p.slot % arr.length];
-    const bob = Math.sin(elapsed*0.0016 + p.bobSeed) * 3;
+    const bob = Math.sin(elapsed*0.0016 + p.bobSeed) * 1.6;
+    const offsetY = -heartScale * 1.5;
     return {
-      lx: nt.x + p.jitterX*0.55,
-      ly: nt.y + p.jitterY*0.55 + bob,
-      lz: p.zSmall*0.4,
-      cx: W/2, cy: H*0.27
+      lx: (nt.x + p.jitterX*0.4) * heartPulseVal,
+      ly: (nt.y + offsetY + p.jitterY*0.4 + bob) * heartPulseVal,
+      lz: p.zSmall*0.3,
+      cx, cy
     };
   }
 }
 
-function project(local, theta){
+function project(local, theta, zoomF){
   const rx = local.lx*Math.cos(theta) - local.lz*Math.sin(theta);
   const rz = local.lx*Math.sin(theta) + local.lz*Math.cos(theta);
   const focal = Math.max(W,H) * 0.9;
   const persp = focal/(focal+rz);
-  return {
-    tx: local.cx + rx*persp,
-    ty: local.cy + local.ly*persp,
-    scale: persp
-  };
+  const tx = local.cx + rx*persp;
+  const ty = local.cy + local.ly*persp;
+  const zx = W/2 + (tx - W/2)*zoomF;
+  const zy = local.cy + (ty - local.cy)*zoomF;
+  return { tx: zx, ty: zy, scale: persp };
+}
+
+function spriteFor(colorType){
+  if(colorType === 'gold') return spriteGold;
+  if(colorType === 'white') return spriteWhite;
+  if(colorType === 'hotwhite') return spriteHotWhite;
+  return spritePink;
 }
 
 let lastTime = performance.now();
@@ -292,13 +371,14 @@ function frame(now){
   const elapsed = now - START_TIME;
   const isFinal = elapsed >= TRANSITION_START;
 
-  if(isFinal && !prevPhaseFinal){
-    swirlBoost = 1.5;
-    swirlApplied = false;
+  if(isFinal && !transitionFired){
+    transitionFired = true;
+    swirlBoost = 1.6;
+    spawnFlash(W/2, H*HEART_CENTER_Y_RATIO, 0.8);
+    spawnRing(W/2, H*HEART_CENTER_Y_RATIO, '255,150,210', Math.max(W,H)*0.7, 0.9);
+    spawnRing(W/2, H*HEART_CENTER_Y_RATIO, '255,220,150', Math.max(W,H)*0.9, 0.6);
   }
-  prevPhaseFinal = isFinal;
 
-  // camera rotation
   let theta;
   if(!isFinal){
     theta = Math.sin(elapsed*0.0005)*0.30;
@@ -306,14 +386,27 @@ function frame(now){
     cameraTheta += 0.00005*dt;
     swirlBoost *= Math.pow(0.05, dt/1600);
     theta = cameraTheta + Math.sin(elapsed*0.00035)*0.16 + swirlBoost*1.8;
+    const zt = Math.min(1, (elapsed - TRANSITION_START)/26000);
+    zoom = 1 + zt*0.16;
   }
 
-  // background fade (trail effect)
+  const heartPulseBase = isFinal
+    ? 1 + Math.sin(elapsed*0.0032)*0.07 + Math.sin(elapsed*0.008)*0.02
+    : 1;
+
+  if(isFinal){
+    const s = Math.sin(elapsed*0.0032);
+    if(prevPulseSin < 0.94 && s >= 0.94){
+      spawnRing(W/2, H*HEART_CENTER_Y_RATIO, '255,120,190', Math.max(W,H)*0.42, 0.5);
+      spawnFlash(W/2, H*HEART_CENTER_Y_RATIO, 0.22);
+    }
+    prevPulseSin = s;
+  }
+
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = 'rgba(4,2,10,0.20)';
   ctx.fillRect(0,0,W,H);
 
-  // stars
   const starAlphaGlobal = Math.min(1, elapsed/2200);
   for(let i=0;i<stars.length;i++){
     const s = stars[i];
@@ -325,7 +418,6 @@ function frame(now){
     ctx.fill();
   }
 
-  // energy field behind forming name
   if(!isFinal){
     const pulse = Math.sin(elapsed*0.004)*0.5+0.5;
     const gx = W/2, gy = H*0.42;
@@ -335,9 +427,16 @@ function frame(now){
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = grad;
     ctx.fillRect(0,0,W,H);
+  } else {
+    const gx = W/2, gy = H*HEART_CENTER_Y_RATIO;
+    const grad = ctx.createRadialGradient(gx,gy,0,gx,gy, Math.min(W,H)*0.5*zoom);
+    grad.addColorStop(0, `rgba(255,90,170,${0.10+Math.sin(elapsed*0.0032)*0.03})`);
+    grad.addColorStop(1, 'rgba(255,90,170,0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
   }
 
-  // particles
   ctx.globalCompositeOperation = 'lighter';
   const introFade = Math.min(1, elapsed/900);
   const k = 0.05;
@@ -345,16 +444,17 @@ function frame(now){
 
   for(let i=0;i<particles.length;i++){
     const p = particles[i];
-    const local = isFinal ? getFinalLocal(p, elapsed) : getNameBigLocal(p);
-    const proj = project(local, theta);
+    const local = isFinal ? getFinalLocal(p, elapsed, heartPulseBase) : getNameBigLocal(p);
+    const proj = project(local, theta, isFinal ? zoom : 1);
 
-    if(isFinal && !swirlApplied){
+    if(isFinal && swirlBoost > 0.02){
       const ang = Math.atan2(p.y - H/2, p.x - W/2) + Math.PI/2;
-      const force = 70 + Math.random()*90;
-      p.vx += Math.cos(ang)*force*0.35;
-      p.vy += Math.sin(ang)*force*0.35;
+      const force = (40 + Math.random()*60) * swirlBoost;
+      p.vx += Math.cos(ang)*force*0.02*dtF;
+      p.vy += Math.sin(ang)*force*0.02*dtF;
     }
 
+    p.px = p.x; p.py = p.y;
     p.vx += (proj.tx - p.x) * k * dtF;
     p.vy += (proj.ty - p.y) * k * dtF;
     p.vx *= damping;
@@ -366,60 +466,115 @@ function frame(now){
     const size = p.baseSize * scale * SPR_SIZE * 0.09;
     const alpha = Math.max(0, Math.min(1, scale)) * introFade;
 
-    let sprite = spritePink;
-    if(p.colorType === 'gold') sprite = spriteGold;
-    else if(p.colorType === 'white') sprite = spriteWhite;
+    if(ENABLE_TRAILS){
+      const speed = Math.abs(p.vx)+Math.abs(p.vy);
+      if(speed > 1.2){
+        const tAlpha = Math.min(0.5, speed*0.01) * alpha;
+        ctx.strokeStyle = `rgba(${p.colorType==='pink'?'255,90,170':p.colorType==='gold'?'255,205,110':'255,255,255'},${tAlpha.toFixed(3)})`;
+        ctx.lineWidth = Math.max(0.6, size*0.18);
+        ctx.beginPath();
+        ctx.moveTo(p.px, p.py);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+    }
 
+    const sprite = spriteFor(p.colorType);
     ctx.globalAlpha = alpha;
     ctx.drawImage(sprite, p.x - size/2, p.y - size/2, size, size);
   }
   ctx.globalAlpha = 1;
 
-  // meteors (only in final phase)
   if(isFinal){
-    if(now - lastMeteor > (isMobile ? 900 : 650)){
+    const cx = W/2, cy = H*HEART_CENTER_Y_RATIO;
+    for(let i=0;i<sparks.length;i++){
+      const sp = sparks[i];
+      sp.angle += sp.speed * 0.01 * dtF;
+      const rBase = Math.min(W,H) * 0.34 * zoom;
+      const sx = cx + Math.cos(sp.angle) * rBase * sp.radiusX;
+      const sy = cy + Math.sin(sp.angle) * rBase * 0.62 * sp.radiusY + Math.sin(elapsed*0.0015+sp.bobSeed)*6;
+      const tw = Math.sin(elapsed*0.004 + sp.twinkleSeed)*0.5+0.5;
+      const a = 0.35 + tw*0.5;
+      const sprite = sp.colorType === 'gold' ? spriteGold : spriteWhite;
+      const size = sp.size * SPR_SIZE * 0.11;
+      ctx.globalAlpha = a;
+      ctx.drawImage(sprite, sx-size/2, sy-size/2, size, size);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if(isFinal){
+    if(now - lastMeteor > (isMobile ? 750 : 480)){
       lastMeteor = now;
-      if(Math.random() < 0.85) spawnMeteor();
+      if(Math.random() < 0.9) spawnMeteor();
     }
     for(let i=meteors.length-1;i>=0;i--){
       const m = meteors[i];
       m.x += m.vx*dtF*0.15;
       m.y += m.vy*dtF*0.15;
-      m.life -= 0.012*dtF;
+      m.life -= 0.011*dtF;
       if(m.life <= 0 || m.y > H+40){ meteors.splice(i,1); continue; }
-      const tailX = m.x - m.vx*0.12;
-      const tailY = m.y - m.vy*0.12;
+      const tailX = m.x - m.vx*0.14;
+      const tailY = m.y - m.vy*0.14;
       const grad = ctx.createLinearGradient(m.x, m.y, tailX, tailY);
-      grad.addColorStop(0, `rgba(255,255,255,${0.9*m.life})`);
-      grad.addColorStop(1, 'rgba(255,180,220,0)');
+      grad.addColorStop(0, `rgba(${m.color},${0.9*m.life})`);
+      grad.addColorStop(1, `rgba(${m.color},0)`);
       ctx.strokeStyle = grad;
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
       ctx.moveTo(m.x, m.y);
       ctx.lineTo(tailX, tailY);
       ctx.stroke();
     }
 
-    // flashes
-    if(now - lastFlash > 5200){
-      lastFlash = now;
-      spawnFlash(W/2 + (Math.random()-0.5)*W*0.2, H*0.60 + (Math.random()-0.5)*H*0.1);
-    }
-    for(let i=flashes.length-1;i>=0;i--){
-      const f = flashes[i];
-      f.r += (f.maxR - f.r) * 0.045 * dtF;
-      f.alpha *= Math.pow(0.90, dtF);
-      if(f.alpha < 0.01){ flashes.splice(i,1); continue; }
-      const grad = ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,f.r);
-      grad.addColorStop(0, `rgba(255,225,240,${f.alpha})`);
-      grad.addColorStop(0.4, `rgba(255,150,210,${f.alpha*0.4})`);
-      grad.addColorStop(1, 'rgba(255,150,210,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0,0,W,H);
+    if(now - lastBigFlash > 6000){
+      lastBigFlash = now;
+      spawnFlash(W/2 + (Math.random()-0.5)*W*0.15, H*HEART_CENTER_Y_RATIO + (Math.random()-0.5)*H*0.08, 0.4);
     }
   }
 
-  if(isFinal && !swirlApplied) swirlApplied = true;
+  for(let i=flashes.length-1;i>=0;i--){
+    const f = flashes[i];
+    f.r += (f.maxR - f.r) * 0.05 * dtF;
+    f.alpha *= Math.pow(0.90, dtF);
+    if(f.alpha < 0.008){ flashes.splice(i,1); continue; }
+    const grad = ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,f.r);
+    grad.addColorStop(0, `rgba(255,225,240,${f.alpha})`);
+    grad.addColorStop(0.4, `rgba(255,150,210,${f.alpha*0.4})`);
+    grad.addColorStop(1, 'rgba(255,150,210,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  for(let i=rings.length-1;i>=0;i--){
+    const r = rings[i];
+    r.r += (r.maxR - r.r) * 0.045 * dtF;
+    r.alpha *= Math.pow(0.92, dtF);
+    if(r.alpha < 0.01){ rings.splice(i,1); continue; }
+    ctx.strokeStyle = `rgba(${r.color},${r.alpha.toFixed(3)})`;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.r, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  if(bloomSupported){
+    bloomFrameToggle++;
+    if(!isMobile || bloomFrameToggle % 2 === 0){
+      try{
+        bloomCtx.clearRect(0,0,bloomCanvas.width,bloomCanvas.height);
+        bloomCtx.filter = 'blur(3px)';
+        bloomCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, bloomCanvas.width, bloomCanvas.height);
+        bloomCtx.filter = 'none';
+      }catch(e){ bloomSupported = false; }
+    }
+    if(bloomSupported){
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.45;
+      ctx.drawImage(bloomCanvas, 0, 0, bloomCanvas.width, bloomCanvas.height, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+  }
 }
 
 requestAnimationFrame(frame);
