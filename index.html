@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Нателла</title>
+<title>Нателла ❤️</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body {
@@ -43,18 +43,62 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha:false });
 
-const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || Math.min(window.innerWidth, window.innerHeight) < 760;
+/* ================= device quality detection ================= */
+const isMobileUA = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+const smallScreen = Math.min(window.innerWidth, window.innerHeight) < 760;
+const isMobile = isMobileUA || smallScreen;
+
+const cores = navigator.hardwareConcurrency || 4;
+const mem = navigator.deviceMemory || 4;
+
+// quality tier: 0 = low, 1 = medium, 2 = high
+let qualityTier = 2;
+if(isMobile){
+  if(cores <= 4 || mem <= 3) qualityTier = 0;
+  else if(cores <= 6 || mem <= 4) qualityTier = 1;
+  else qualityTier = 1;
+} else {
+  qualityTier = cores <= 4 ? 1 : 2;
+}
+
+const TIER = {
+  0: { particles: 900,  stars: 140, sparks: 30, dpr: 1.2, trails: false, bloom: false, meteorGap: 1100 },
+  1: { particles: 1500, stars: 240, sparks: 60, dpr: 1.5, trails: false, bloom: true,  meteorGap: 800  },
+  2: { particles: 2700, stars: 420, sparks: 110,dpr: 2.0, trails: true,  bloom: true,  meteorGap: 480  }
+}[qualityTier];
+
 let W = window.innerWidth, H = window.innerHeight;
-let DPR = Math.min(window.devicePixelRatio || 1, isMobile ? 1.6 : 2);
+let DPR = Math.min(window.devicePixelRatio || 1, TIER.dpr);
 
 function resizeCanvas(){
   W = window.innerWidth; H = window.innerHeight;
-  DPR = Math.min(window.devicePixelRatio || 1, isMobile ? 1.6 : 2);
+  DPR = Math.min(window.devicePixelRatio || 1, TIER.dpr);
   canvas.width = Math.floor(W*DPR);
   canvas.height = Math.floor(H*DPR);
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 resizeCanvas();
+
+/* ================= runtime FPS monitor (auto-downgrade) ================= */
+let fpsSamples = [];
+let bloomEnabled = TIER.bloom;
+let trailsEnabled = TIER.trails;
+let sparksActiveCount = TIER.sparks;
+
+function trackFps(dt){
+  const fps = 1000/Math.max(dt,1);
+  fpsSamples.push(fps);
+  if(fpsSamples.length > 40) fpsSamples.shift();
+  if(fpsSamples.length === 40){
+    const avg = fpsSamples.reduce((a,b)=>a+b,0)/40;
+    if(avg < 42){
+      if(bloomEnabled){ bloomEnabled = false; }
+      else if(trailsEnabled){ trailsEnabled = false; }
+      else if(sparksActiveCount > 20){ sparksActiveCount = Math.floor(sparksActiveCount*0.6); }
+    }
+    fpsSamples = [];
+  }
+}
 
 /* ================= bloom offscreen canvas ================= */
 const bloomCanvas = document.createElement('canvas');
@@ -83,15 +127,15 @@ function makeSprite(rgb, size){
   return c;
 }
 const SPR_SIZE = 48;
-const spritePink  = makeSprite('255,70,160', SPR_SIZE);
-const spriteGold  = makeSprite('255,205,110', SPR_SIZE);
-const spriteWhite = makeSprite('255,255,255', SPR_SIZE);
+const spritePink     = makeSprite('255,70,160', SPR_SIZE);
+const spriteGold     = makeSprite('255,205,110', SPR_SIZE);
+const spriteWhite    = makeSprite('255,255,255', SPR_SIZE);
 const spriteHotWhite = makeSprite('255,240,250', SPR_SIZE);
 
 /* ================= stars ================= */
 let stars = [];
 function buildStars(){
-  const count = isMobile ? 240 : 420;
+  const count = TIER.stars;
   stars = [];
   for(let i=0;i<count;i++){
     stars.push({
@@ -120,7 +164,7 @@ function spawnMeteor(){
   });
 }
 
-/* ================= full-screen flashes ================= */
+/* ================= flashes ================= */
 let flashes = [];
 function spawnFlash(x,y,strength){
   flashes.push({ x, y, r:0, maxR: Math.max(W,H)*(strength||0.55), alpha:(strength?0.65:0.55) });
@@ -135,7 +179,7 @@ function spawnRing(x,y,color,maxR,startAlpha){
 /* ================= orbiting magic sparks ================= */
 let sparks = [];
 function buildSparks(){
-  const count = isMobile ? 60 : 110;
+  const count = TIER.sparks;
   sparks = [];
   for(let i=0;i<count;i++){
     sparks.push({
@@ -238,9 +282,8 @@ function rebuildTargets(){
 }
 
 /* ================= particles ================= */
-let N = isMobile ? 1500 : 2700;
+let N = TIER.particles;
 let particles = [];
-const ENABLE_TRAILS = !isMobile;
 
 function initParticles(){
   particles = [];
@@ -367,6 +410,7 @@ function frame(now){
   let dt = now - lastTime;
   lastTime = now;
   if(dt > 60) dt = 60;
+  trackFps(dt);
   const dtF = dt/16.6667;
   const elapsed = now - START_TIME;
   const isFinal = elapsed >= TRANSITION_START;
@@ -466,7 +510,7 @@ function frame(now){
     const size = p.baseSize * scale * SPR_SIZE * 0.09;
     const alpha = Math.max(0, Math.min(1, scale)) * introFade;
 
-    if(ENABLE_TRAILS){
+    if(trailsEnabled){
       const speed = Math.abs(p.vx)+Math.abs(p.vy);
       if(speed > 1.2){
         const tAlpha = Math.min(0.5, speed*0.01) * alpha;
@@ -487,7 +531,7 @@ function frame(now){
 
   if(isFinal){
     const cx = W/2, cy = H*HEART_CENTER_Y_RATIO;
-    for(let i=0;i<sparks.length;i++){
+    for(let i=0;i<Math.min(sparks.length, sparksActiveCount);i++){
       const sp = sparks[i];
       sp.angle += sp.speed * 0.01 * dtF;
       const rBase = Math.min(W,H) * 0.34 * zoom;
@@ -504,7 +548,7 @@ function frame(now){
   }
 
   if(isFinal){
-    if(now - lastMeteor > (isMobile ? 750 : 480)){
+    if(now - lastMeteor > TIER.meteorGap){
       lastMeteor = now;
       if(Math.random() < 0.9) spawnMeteor();
     }
@@ -558,7 +602,7 @@ function frame(now){
     ctx.stroke();
   }
 
-  if(bloomSupported){
+  if(bloomSupported && bloomEnabled){
     bloomFrameToggle++;
     if(!isMobile || bloomFrameToggle % 2 === 0){
       try{
